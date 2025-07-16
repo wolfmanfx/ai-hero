@@ -1,7 +1,10 @@
 import ReactMarkdown, { type Components } from "react-markdown";
+import type { Message } from "ai";
+
+export type MessagePart = NonNullable<Message["parts"]>[number];
 
 interface ChatMessageProps {
-  text: string;
+  parts?: MessagePart[];
   role: string;
   userName: string;
 }
@@ -38,7 +41,245 @@ const Markdown = ({ children }: { children: string }) => {
   return <ReactMarkdown components={components}>{children}</ReactMarkdown>;
 };
 
-export const ChatMessage = ({ text, role, userName }: ChatMessageProps) => {
+const renderSearchResult = (result: any) => {
+  // Handle array of results
+  if (Array.isArray(result)) {
+    return (
+      <div className="space-y-3">
+        {result.map((item, idx) => (
+          <div key={idx} className="border-l-2 border-gray-700 pl-3">
+            {renderSearchResult(item)}
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  // Handle object results with common search result patterns
+  if (typeof result === "object" && result !== null) {
+    const { title, url, snippet, description, content, link, ...rest } = result;
+    
+    return (
+      <div className="space-y-1">
+        {(title || result.name) && (
+          <h3 className="text-base font-medium text-blue-400">
+            {url || link ? (
+              <a href={url || link} target="_blank" rel="noopener noreferrer" className="hover:underline">
+                {title || result.name}
+              </a>
+            ) : (
+              title || result.name
+            )}
+          </h3>
+        )}
+        {(url || link) && (
+          <div className="text-xs text-green-600">{url || link}</div>
+        )}
+        {(snippet || description || content) && (
+          <p className="text-sm text-gray-300 leading-relaxed">
+            {snippet || description || content}
+          </p>
+        )}
+        {Object.keys(rest).length > 0 && (
+          <div className="mt-2 text-xs text-gray-500">
+            {Object.entries(rest).map(([key, value]) => (
+              <div key={key}>
+                <span className="font-medium">{key}:</span> {String(value)}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // Fallback for primitive values
+  return <div className="text-sm text-gray-300">{String(result)}</div>;
+};
+
+const formatToolArgs = (args: any) => {
+  if (!args || typeof args !== "object") return null;
+  
+  const entries = Object.entries(args);
+  if (entries.length === 0) return null;
+  
+  // Special handling for different types of prompt fields
+  const promptField = entries.find(([key]) => 
+    key.toLowerCase() === 'prompt' || 
+    key.toLowerCase() === 'query' || 
+    key.toLowerCase() === 'question'
+  );
+  
+  const systemPromptField = entries.find(([key]) => 
+    key.toLowerCase() === 'systemprompt' || 
+    key.toLowerCase() === 'system_prompt' ||
+    key.toLowerCase() === 'system'
+  );
+  
+  const combinedPromptField = entries.find(([key]) => 
+    key.toLowerCase() === 'combinedprompt' || 
+    key.toLowerCase() === 'combined_prompt' ||
+    key.toLowerCase() === 'fullprompt' ||
+    key.toLowerCase() === 'full_prompt'
+  );
+  
+  const otherFields = entries.filter(([key]) => {
+    const lowerKey = key.toLowerCase();
+    return lowerKey !== 'prompt' && 
+           lowerKey !== 'query' && 
+           lowerKey !== 'question' &&
+           lowerKey !== 'systemprompt' &&
+           lowerKey !== 'system_prompt' &&
+           lowerKey !== 'system' &&
+           lowerKey !== 'combinedprompt' &&
+           lowerKey !== 'combined_prompt' &&
+           lowerKey !== 'fullprompt' &&
+           lowerKey !== 'full_prompt';
+  });
+  
+  return (
+    <div className="space-y-3">
+      {promptField && (
+        <div className="space-y-1">
+          <div className="text-xs text-gray-500 uppercase tracking-wide">{promptField[0]}</div>
+          <div className="text-sm text-gray-100 bg-gray-800 rounded p-3 whitespace-pre-wrap">
+            {String(promptField[1])}
+          </div>
+        </div>
+      )}
+      
+      {systemPromptField && (
+        <details className="space-y-1">
+          <summary className="cursor-pointer text-xs text-gray-500 uppercase tracking-wide hover:text-gray-400">
+            {systemPromptField[0]} (Click to expand)
+          </summary>
+          <div className="text-sm text-gray-100 bg-gray-800 rounded p-3 whitespace-pre-wrap mt-1">
+            {String(systemPromptField[1])}
+          </div>
+        </details>
+      )}
+      
+      {combinedPromptField && (
+        <details className="space-y-1">
+          <summary className="cursor-pointer text-xs text-gray-500 uppercase tracking-wide hover:text-gray-400">
+            {combinedPromptField[0]} (Click to expand)
+          </summary>
+          <div className="text-sm text-gray-100 bg-gray-800 rounded p-3 whitespace-pre-wrap mt-1">
+            {String(combinedPromptField[1])}
+          </div>
+        </details>
+      )}
+      
+      {otherFields.length > 0 && (
+        <div className="space-y-1">
+          {otherFields.map(([key, value]) => (
+            <div key={key} className="flex items-start gap-2 text-sm">
+              <span className="text-gray-500 min-w-[80px]">{key}:</span>
+              <span className="text-gray-300 break-all">
+                {typeof value === "string" ? value : JSON.stringify(value, null, 2)}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+const getToolIcon = (toolName: string) => {
+  if (toolName.toLowerCase().includes("search")) {
+    return (
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+      </svg>
+    );
+  }
+  return (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
+    </svg>
+  );
+};
+
+const renderMessagePart = (part: MessagePart, index: number) => {
+  switch (part.type) {
+    case "text":
+      return <Markdown key={index}>{part.text}</Markdown>;
+    
+    case "tool-invocation":
+      const { toolInvocation } = part;
+      const isSearch = toolInvocation.toolName.toLowerCase().includes("search");
+      
+      return (
+        <div key={index} className="my-3 rounded-lg border border-gray-700 bg-gray-900/50 overflow-hidden">
+          {/* Tool Header */}
+          <div className="bg-gray-800/50 px-4 py-2 border-b border-gray-700">
+            <div className="flex items-center gap-2">
+              <div className="text-blue-400">
+                {getToolIcon(toolInvocation.toolName)}
+              </div>
+              <span className="font-medium text-sm text-gray-300">
+                {toolInvocation.toolName}
+              </span>
+              {toolInvocation.state === "partial-call" && (
+                <span className="ml-auto text-xs text-gray-500 animate-pulse">Calling...</span>
+              )}
+              {toolInvocation.state === "call" && (
+                <span className="ml-auto text-xs text-gray-500">Running</span>
+              )}
+              {toolInvocation.state === "result" && (
+                <span className="ml-auto text-xs text-green-500">Complete</span>
+              )}
+            </div>
+          </div>
+          
+          {/* Tool Content */}
+          <div className="p-4">
+            {(toolInvocation.state === "partial-call" || toolInvocation.state === "call") && (
+              <div>
+                {toolInvocation.args && (
+                  <div>
+                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-2">Parameters</div>
+                    {formatToolArgs(toolInvocation.args)}
+                  </div>
+                )}
+                {!toolInvocation.args && (
+                  <div className="text-sm text-gray-400 italic">Preparing...</div>
+                )}
+              </div>
+            )}
+            
+            {toolInvocation.state === "result" && (
+              <div>
+                {/* Always show args prominently */}
+                {toolInvocation.args && (
+                  <div className="mb-4">
+                    <div className="text-xs text-gray-500 uppercase tracking-wide mb-2">Parameters</div>
+                    {formatToolArgs(toolInvocation.args)}
+                  </div>
+                )}
+                
+                {/* Show results */}
+                <div className="text-xs text-gray-500 uppercase tracking-wide mb-2">Results</div>
+                {isSearch ? (
+                  renderSearchResult(toolInvocation.result)
+                ) : (
+                  <pre className="overflow-x-auto rounded bg-gray-800 p-3 text-xs">
+                    {JSON.stringify(toolInvocation.result, null, 2)}
+                  </pre>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    
+    default:
+      return null;
+  }
+};
+
+export const ChatMessage = ({ parts, role, userName }: ChatMessageProps) => {
   const isAI = role === "assistant";
 
   return (
@@ -53,7 +294,7 @@ export const ChatMessage = ({ text, role, userName }: ChatMessageProps) => {
         </p>
 
         <div className="prose prose-invert max-w-none">
-          <Markdown>{text}</Markdown>
+          {parts?.map((part, index) => renderMessagePart(part, index))}
         </div>
       </div>
     </div>
