@@ -79,7 +79,7 @@ const fetchFromSerper = cacheWithRedis(
       throw new Error(await response.text());
     }
 
-    const json = await response.json();
+    const json = await response.json() as SerperTool.SearchResult;
 
     return json;
   },
@@ -88,7 +88,7 @@ const fetchFromSerper = cacheWithRedis(
 export const searchSerper = async (
   body: SerperTool.SearchInput,
   signal: AbortSignal | undefined,
-) => {
+): Promise<SerperTool.SearchResult> => {
   const results = await fetchFromSerper(`/search`, {
     method: "POST",
     body: JSON.stringify(body),

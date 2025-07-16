@@ -7,19 +7,51 @@ import { z } from "zod";
 import { model } from "~/model";
 import { auth } from "~/server/auth";
 import { searchSerper } from "~/serper";
+import { checkRateLimit, recordRequest } from "~/server/rate-limiter";
 
 export const maxDuration = 60;
 
 export async function POST(request: Request) {
   const session = await auth();
   
-  if (!session?.user) {
+  if (!session?.user?.id) {
     return new Response("Unauthorized", { status: 401 });
   }
 
   const body = (await request.json()) as {
     messages: Array<Message>;
   };
+
+  // Check rate limit
+  let rateLimitStatus;
+  try {
+    rateLimitStatus = await checkRateLimit(session.user.id);
+
+    if (!rateLimitStatus.allowed) {
+      return new Response(
+        JSON.stringify({
+          error: "Too Many Requests",
+          message: "Daily limit exceeded",
+          limit: rateLimitStatus.limit,
+          remaining: 0,
+        }),
+        { 
+          status: 429,
+          headers: {
+            'Content-Type': 'application/json',
+            'X-RateLimit-Limit': rateLimitStatus.limit.toString(),
+            'X-RateLimit-Remaining': '0',
+          }
+        }
+      );
+    }
+
+    // Record the request
+    await recordRequest(session.user.id);
+  } catch (error) {
+    console.error("Rate limit check failed:", error);
+    return new Response("Internal Server Error", { status: 500 });
+  }
 
   return createDataStreamResponse({
     execute: async (dataStream) => {
