@@ -2,7 +2,7 @@ import { db } from "~/server/db";
 import { requests, users } from "~/server/db/schema";
 import { eq, and, gte, count } from "drizzle-orm";
 
-const DAILY_REQUEST_LIMIT = 1;
+const DAILY_REQUEST_LIMIT = 100;
 
 export async function checkRateLimit(userId: string): Promise<{
   allowed: boolean;

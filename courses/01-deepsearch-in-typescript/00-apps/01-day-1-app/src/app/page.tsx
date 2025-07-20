@@ -3,20 +3,42 @@ import Link from "next/link";
 import { auth } from "~/server/auth/index.ts";
 import { ChatPage } from "./chat.tsx";
 import { AuthButton } from "../components/auth-button.tsx";
+import { getChats, getChat } from "~/server/db/chat-helpers";
+import type { Message } from "ai";
 
-const chats = [
-  {
-    id: "1",
-    title: "My First Chat",
-  },
-];
 
-const activeChatId = "1";
-
-export default async function HomePage() {
+export default async function HomePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ id?: string }>;
+}) {
   const session = await auth();
   const userName = session?.user?.name ?? "Guest";
   const isAuthenticated = !!session?.user;
+  const { id: chatIdFromUrl } = await searchParams;
+  
+  // Always have a stable chatId
+  const chatId = chatIdFromUrl ?? crypto.randomUUID();
+  const isNewChat = !chatIdFromUrl;
+
+  // Fetch chats for sidebar if authenticated
+  const chats = isAuthenticated && session.user?.id 
+    ? await getChats(session.user.id) 
+    : [];
+
+  // Fetch specific chat if chatId is provided and user is authenticated
+  let initialMessages: Message[] = [];
+  if (!isNewChat && isAuthenticated && session.user?.id) {
+    const chatData = await getChat(chatId, session.user.id);
+    if (chatData?.messages) {
+      initialMessages = chatData.messages.map((msg) => ({
+        id: msg.id,
+        role: msg.role as "user" | "assistant",
+        parts: msg.content as unknown as Message["parts"],
+        content: "",
+      }));
+    }
+  }
 
   return (
     <div className="flex h-screen bg-gray-950">
@@ -41,9 +63,9 @@ export default async function HomePage() {
             chats.map((chat) => (
               <div key={chat.id} className="flex items-center gap-2">
                 <Link
-                  href={`/?chatId=${chat.id}`}
+                  href={`/?id=${chat.id}`}
                   className={`flex-1 rounded-lg p-3 text-left text-sm text-gray-300 focus:outline-none focus:ring-2 focus:ring-blue-400 ${
-                    chat.id === activeChatId
+                    chat.id === chatId
                       ? "bg-gray-700"
                       : "hover:bg-gray-750 bg-gray-800"
                   }`}
@@ -68,7 +90,14 @@ export default async function HomePage() {
         </div>
       </div>
 
-      <ChatPage userName={userName} isAuthenticated={isAuthenticated} />
+      <ChatPage 
+        key={chatId}
+        userName={userName} 
+        isAuthenticated={isAuthenticated} 
+        chatId={chatId} 
+        initialMessages={initialMessages}
+        isNewChat={isNewChat}
+      />
     </div>
   );
 }
