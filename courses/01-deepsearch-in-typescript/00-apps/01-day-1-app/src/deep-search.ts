@@ -8,6 +8,7 @@ import { z } from "zod";
 import { model as defaultModel } from "~/model";
 import { searchSerper } from "~/serper";
 import { bulkCrawlWebsites } from "~/crawler";
+import { env } from "~/env";
 
 export const streamFromDeepSearch = (opts: {
   messages: Message[];
@@ -34,9 +35,10 @@ Today's date is ${currentDate} (UTC).
 IMPORTANT: When users ask for "latest", "recent", "current", or "up-to-date" information, always include relevant date qualifiers in your search queries (e.g., "2024", "December 2024", "today", etc.) to ensure you find the most recent information.
 
 You MUST follow these steps for EVERY user question:
-1. ALWAYS use the searchWeb tool first to find relevant websites
+1. ALWAYS use the searchWeb tool first to find ${env.SEARCH_RESULTS_COUNT} relevant websites
 2. ALWAYS use the scrapePages tool to get detailed content from at least 5 different domains
-3. ALWAYS cite your sources with inline links [like this](URL) for EVERY fact, claim, or piece of information
+3. ALWAYS analyze the scraped content to extract relevant information
+4. ALWAYS cite your sources with inline links [like this](URL) for EVERY fact, claim, or piece of information
 
 CRITICAL CITATION REQUIREMENTS:
 - EVERY statement, fact, or claim MUST have an inline citation [Source Title](URL)
@@ -77,7 +79,7 @@ Format your responses in a clear and helpful manner with comprehensive informati
         }),
         execute: async ({ query }, { abortSignal }) => {
           const results = await searchSerper(
-            { q: query, num: 10 },
+            { q: query, num: env.SEARCH_RESULTS_COUNT },
             abortSignal,
           );
 

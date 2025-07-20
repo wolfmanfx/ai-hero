@@ -37,9 +37,9 @@ export async function POST(request: Request) {
 
   // Check rate limit
   const config: RateLimitConfig = {
-    maxRequests: 10,
+    maxRequests: 50,
     maxRetries: 3,
-    windowMs: 5_000, // 20 seconds for testing
+    windowMs: 60_000, // 60 seconds for testing
     keyPrefix: "global",
   };
 
