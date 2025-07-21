@@ -36,6 +36,7 @@ export default async function HomePage({
         role: msg.role as "user" | "assistant",
         parts: msg.content as unknown as Message["parts"],
         content: "",
+        annotations: msg.annotations as Message["annotations"],
       }));
     }
   }

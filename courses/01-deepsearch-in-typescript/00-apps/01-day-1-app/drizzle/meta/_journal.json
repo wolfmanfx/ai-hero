@@ -15,6 +15,20 @@
       "when": 1752993934807,
       "tag": "0001_overconfident_expediter",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1753091856376,
+      "tag": "0002_greedy_the_order",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1753091945471,
+      "tag": "0003_overrated_prima",
+      "breakpoints": true
     }
   ]
 }

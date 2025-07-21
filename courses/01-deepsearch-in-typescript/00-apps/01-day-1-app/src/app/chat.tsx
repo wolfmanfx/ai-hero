@@ -9,6 +9,8 @@ import { SignInModal } from "~/components/sign-in-modal";
 import { isNewChatCreated } from "~/utils/chat";
 import type { Message } from "ai";
 import { StickToBottom } from "use-stick-to-bottom";
+import type { OurMessageAnnotation } from "~/types/message-annotation";
+import { useGeolocation } from "~/hooks/use-geolocation";
 
 interface ChatProps {
   userName: string;
@@ -21,6 +23,8 @@ interface ChatProps {
 export const ChatPage = ({ userName, isAuthenticated, chatId, initialMessages, isNewChat }: ChatProps) => {
   const [showSignInModal, setShowSignInModal] = useState(false);
   const router = useRouter();
+  const location = useGeolocation();
+  
   const {
     messages,
     input,
@@ -32,6 +36,14 @@ export const ChatPage = ({ userName, isAuthenticated, chatId, initialMessages, i
     body: {
       chatId,
       isNewChat,
+      ...(location.latitude && location.longitude && !location.loading ? {
+        location: {
+          latitude: location.latitude,
+          longitude: location.longitude,
+          city: location.city ?? undefined,
+          country: location.country ?? undefined,
+        }
+      } : {}),
     },
     initialMessages,
   });
@@ -75,6 +87,7 @@ export const ChatPage = ({ userName, isAuthenticated, chatId, initialMessages, i
                   parts={message.parts}
                   role={message.role as "user" | "assistant"}
                   userName={userName}
+                  annotations={message.annotations as OurMessageAnnotation[] | undefined}
                 />
               );
             })}
@@ -82,7 +95,26 @@ export const ChatPage = ({ userName, isAuthenticated, chatId, initialMessages, i
         </StickToBottom>
 
         <div className="border-t border-gray-700">
-          <form onSubmit={handleSubmitWithAuth} className="mx-auto max-w-[65ch] p-4">
+          <div className="mx-auto max-w-[65ch] px-4 pt-2">
+            {location.error && (
+              <div className="text-xs text-red-400 mb-2">
+                Location error: {location.error}. Location-based searches won't be available.
+              </div>
+            )}
+            {location.loading && (
+              <div className="text-xs text-gray-400 mb-2">
+                Getting your location...
+              </div>
+            )}
+            {!location.loading && !location.error && location.latitude && location.longitude && (
+              <div className="text-xs text-gray-400 mb-2">
+                📍 {location.city && location.country 
+                  ? `${location.city}, ${location.country}` 
+                  : `Lat: ${location.latitude.toFixed(4)}, Lon: ${location.longitude.toFixed(4)}`}
+              </div>
+            )}
+          </div>
+          <form onSubmit={handleSubmitWithAuth} className="mx-auto max-w-[65ch] p-4 pt-0">
             <div className="flex gap-2">
               <input
                 value={input}

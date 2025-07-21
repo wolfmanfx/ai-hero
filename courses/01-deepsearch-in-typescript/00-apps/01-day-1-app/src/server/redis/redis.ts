@@ -14,7 +14,6 @@ export const cacheWithRedis = <TFunc extends (...args: any[]) => Promise<any>>(
     const key = `${keyPrefix}${CACHE_KEY_SEPARATOR}${JSON.stringify(args)}`;
     const cachedResult = await redis.get(key);
     if (cachedResult) {
-      console.log(`Cache hit for ${key}`);
       return JSON.parse(cachedResult);
     }
 

@@ -3,14 +3,16 @@ import type { Message } from "ai";
 import { db } from ".";
 import { chats, messages } from "./schema";
 import type { DB } from "./schema";
+import type { OurMessageAnnotation } from "~/types/message-annotation";
 
 export const upsertChat = async (opts: {
   userId: string;
   chatId: string;
-  title: string;
+  title?: string;
   messages: Message[];
+  annotations?: OurMessageAnnotation[];
 }) => {
-  const { userId, chatId, title, messages: chatMessages } = opts;
+  const { userId, chatId, title, messages: chatMessages, annotations } = opts;
 
   return await db.transaction(async (tx) => {
     const existingChat = await tx
@@ -28,23 +30,46 @@ export const upsertChat = async (opts: {
 
       await tx
         .update(chats)
-        .set({ title, updatedAt: new Date() })
+        .set({ 
+          ...(title !== undefined ? { title } : {}),
+          updatedAt: new Date() 
+        })
         .where(eq(chats.id, chatId));
     } else {
       await tx.insert(chats).values({
         id: chatId,
-        title,
+        title: title ?? "New Chat",
         userId,
       });
     }
 
     if (chatMessages.length > 0) {
-      const messagesToInsert: DB.NewMessage[] = chatMessages.map((message, index) => ({
-        chatId,
-        role: message.role,
-        parts: message.parts as unknown as DB.Message["parts"],
-        order: index,
-      }));
+      const messagesToInsert: DB.NewMessage[] = chatMessages.map((message, index) => {
+        // Handle both content and parts format
+        let parts: DB.Message["parts"];
+        
+        if (message.parts) {
+          parts = message.parts as unknown as DB.Message["parts"];
+        } else if (typeof message.content === 'string') {
+          parts = [{ type: 'text', text: message.content }] as unknown as DB.Message["parts"];
+        } else {
+          parts = [] as unknown as DB.Message["parts"];
+        }
+        
+        // Check if this is the last message (assistant message) and we have annotations
+        const isLastMessage = index === chatMessages.length - 1;
+        const messageAnnotations = isLastMessage && annotations && annotations.length > 0 
+          ? annotations as unknown as DB.Message["annotations"]
+          : undefined;
+        
+        return {
+          chatId,
+          role: message.role,
+          parts,
+          order: index,
+          annotations: messageAnnotations,
+        };
+      });
 
       await tx.insert(messages).values(messagesToInsert);
     }
@@ -75,6 +100,7 @@ export const getChat = async (chatId: string, userId: string) => {
       id: row.message!.id,
       role: row.message!.role as Message["role"],
       content: row.message!.parts as Message["content"],
+      annotations: row.message!.annotations as OurMessageAnnotation[] | undefined,
     }));
 
   return {

@@ -1,5 +1,7 @@
 import ReactMarkdown, { type Components } from "react-markdown";
 import type { Message } from "ai";
+import { useState } from "react";
+import type { OurMessageAnnotation } from "~/types/message-annotation";
 
 export type MessagePart = NonNullable<Message["parts"]>[number];
 
@@ -7,6 +9,7 @@ interface ChatMessageProps {
   parts?: MessagePart[];
   role: string;
   userName: string;
+  annotations?: OurMessageAnnotation[];
 }
 
 const components: Components = {
@@ -279,7 +282,103 @@ const renderMessagePart = (part: MessagePart, index: number) => {
   }
 };
 
-export const ChatMessage = ({ parts, role, userName }: ChatMessageProps) => {
+const SearchIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+  </svg>
+);
+
+const LinkIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+  </svg>
+);
+
+export const ReasoningSteps = ({
+  annotations,
+}: {
+  annotations: OurMessageAnnotation[];
+}) => {
+  const [openStep, setOpenStep] = useState<
+    number | null
+  >(null);
+
+  if (!annotations || annotations.length === 0) return null;
+
+  return (
+    <div className="mb-4 w-full">
+      <ul className="space-y-1">
+        {annotations.map((annotation, index) => {
+          const isOpen = openStep === index;
+          return (
+            <li key={index} className="relative">
+              <button
+                type="button"
+                onClick={() =>
+                  setOpenStep(isOpen ? null : index)
+                }
+                className={`min-w-34 flex w-full flex-shrink-0 items-center rounded px-2 py-1 text-left text-sm transition-colors ${
+                  isOpen
+                    ? "bg-gray-700 text-gray-200"
+                    : "text-gray-400 hover:bg-gray-800 hover:text-gray-300"
+                }`}
+              >
+                <span
+                  className={`z-10 mr-3 flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border-2 border-gray-500 text-xs font-bold ${
+                    isOpen
+                      ? "border-blue-400 text-white"
+                      : "bg-gray-800 text-gray-300"
+                  }`}
+                >
+                  {index + 1}
+                </span>
+                {annotation.action.title}
+              </button>
+              <div
+                className={`${isOpen ? "mt-1" : "hidden"}`}
+              >
+                {isOpen && (
+                  <div className="px-2 py-1">
+                    <div className="text-sm italic text-gray-400">
+                      <Markdown>
+                        {annotation.action.reasoning}
+                      </Markdown>
+                    </div>
+                    {annotation.action.type ===
+                      "search" && (
+                      <div className="mt-2 flex items-center gap-2 text-sm text-gray-400">
+                        <SearchIcon />
+                        <span>
+                          {annotation.action.query}
+                        </span>
+                      </div>
+                    )}
+                    {annotation.action.type ===
+                      "scrape" && (
+                      <div className="mt-2 flex items-center gap-2 text-sm text-gray-400">
+                        <LinkIcon />
+                        <span>
+                          {annotation.action.urls
+                            ?.map(
+                              (url) =>
+                                new URL(url).hostname,
+                            )
+                            ?.join(", ")}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+};
+
+export const ChatMessage = ({ parts, role, userName, annotations }: ChatMessageProps) => {
   const isAI = role === "assistant";
 
   return (
@@ -292,6 +391,10 @@ export const ChatMessage = ({ parts, role, userName }: ChatMessageProps) => {
         <p className="mb-2 text-sm font-semibold text-gray-400">
           {isAI ? "AI" : userName}
         </p>
+
+        {isAI && annotations && annotations.length > 0 && (
+          <ReasoningSteps annotations={annotations} />
+        )}
 
         <div className="prose prose-invert max-w-none">
           {parts?.map((part, index) => renderMessagePart(part, index))}
