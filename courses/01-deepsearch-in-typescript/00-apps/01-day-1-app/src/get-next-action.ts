@@ -3,60 +3,31 @@ import { z } from "zod";
 import { model } from "~/model";
 import type { SystemContext } from "./system-context";
 
-export interface SearchAction {
-  type: "search";
-  title: string;
+export interface ContinueAction {
+  type: "continue";
   reasoning: string;
-  query: string;
-}
-
-export interface ScrapeAction {
-  type: "scrape";
-  title: string;
-  reasoning: string;
-  urls: string[];
 }
 
 export interface AnswerAction {
   type: "answer";
-  title: string;
   reasoning: string;
 }
 
 export type Action =
-  | SearchAction
-  | ScrapeAction
+  | ContinueAction
   | AnswerAction;
 
 export const actionSchema = z.object({
-  title: z
-    .string()
-    .describe(
-      "The title of the action, to be displayed in the UI. For search actions, use 'Searching: [topic]' format. For scrape actions, use 'Scraping: [website names]' format. For answer actions, use 'Generating answer'. Examples: 'Searching: GPU benchmarks 2025', 'Scraping: TechRadar, Tom's Hardware', 'Generating answer'",
-    ),
   reasoning: z
     .string()
-    .describe("The reason you chose this step."),
+    .describe("The reason you chose this action."),
   type: z
-    .enum(["search", "scrape", "answer"])
+    .enum(["continue", "answer"])
     .describe(
       `The type of action to take.
-      - 'search': Search the web for more information.
-      - 'scrape': Scrape a URL.
+      - 'continue': Continue searching for more information.
       - 'answer': Answer the user's question and complete the loop.`,
     ),
-  query: z
-    .string()
-    .describe(
-      "The query to search for. Required if type is 'search'.",
-    )
-    .optional(),
-  urls: z
-    .array(z.string())
-    .describe(
-      "The URLs to scrape. Required if type is 'scrape'.",
-    )
-    .optional(),
 });
 
 export const getNextAction = async (
@@ -91,49 +62,39 @@ User's Location:
         langfuseTraceId: langfuseTraceId,
       },
     } : undefined,
-    system: `You are a helpful AI assistant with access to web search capabilities and web scraping.
+    system: `You are a decision-making component that determines whether to continue searching for information or to generate an answer.
 
 Today's date is ${currentDate} (UTC).${locationInfo ? '\n' + locationInfo : ''}
 
-IMPORTANT: When users ask for location-based information (like "near me", "nearby", "in my area", "local"), include their location in your search queries. For example, if they ask for "great restaurants near me" and they're in Oxford, UK, search for "great restaurants Oxford UK".
-
-IMPORTANT: When users ask for "latest", "recent", "current", or "up-to-date" information, always include relevant date qualifiers in your search queries (e.g., "2024", "December 2024", "today", etc.) to ensure you find the most recent information.
-
 You must decide what action to take next:
 
-1. 'search': Search the web for more information if you need to find websites or general information
-2. 'scrape': Scrape specific URLs if you have found relevant websites that need detailed content extraction
-3. 'answer': Answer the user's question if you have sufficient information from previous searches and scrapes
+1. 'continue': More information is needed to answer the user's question adequately.
+2. 'answer': Sufficient information has been gathered from previous searches to provide a comprehensive answer.
 
-CRITICAL WORKFLOW RULES:
-- EACH NEW USER QUESTION requires its own fresh search and scrape process
-- Previous conversation history provides context but does NOT replace the need for new searches
-- ALWAYS start with a search if you haven't searched for THIS SPECIFIC question yet (check "Context from previous actions in this search")
-- ALWAYS scrape URLs after searching to get detailed content (even if search snippets seem sufficient)
-- Only choose 'answer' AFTER you have both searched AND scraped relevant URLs FOR THE CURRENT QUESTION
-- You MUST scrape at least 2-3 relevant URLs from search results before answering
-- If "Context from previous actions in this search" is empty, you MUST start with a search
+CRITICAL DECISION RULES:
+- Choose 'continue' if:
+  - No searches have been performed yet for the current question
+  - The gathered information is incomplete or contradictory
+  - Key aspects of the user's question remain unanswered
+  - The search results suggest there might be more relevant information available
+  
+- Choose 'answer' if:
+  - You have gathered comprehensive information from searches
+  - All key aspects of the user's question can be addressed
+  - The search results provide consistent and sufficient information
+  - Further searching is unlikely to add significant value
 
-IMPORTANT for titles:
-- For search actions: Use format "Searching: [specific topic]" (e.g., "Searching: RTX 5090 benchmarks")
-- For scrape actions: Use format "Scraping: [website names]" (e.g., "Scraping: NVIDIA.com, TechPowerUp")
-- For answer actions: Use "Generating answer"
-
-Choose the most appropriate next action. Remember: search → scrape → answer is the required workflow FOR EACH NEW QUESTION.`,
+Base your decision ONLY on the current question and the search results gathered for it.`,
     prompt: `=== PREVIOUS CONVERSATION (for context only) ===
 ${context.getConversationHistory()}
 
 === CURRENT QUESTION TO ANSWER ===
 "${context.getUserQuestion()}"
 
-=== ACTIONS TAKEN FOR CURRENT QUESTION ===
-Search History:
-${context.getQueryHistory() || 'No searches performed yet for this question'}
+=== SEARCH RESULTS FOR CURRENT QUESTION ===
+${context.getSearchHistory() || 'No searches performed yet for this question'}
 
-Scrape History:
-${context.getScrapeHistory() || 'No scrapes performed yet for this question'}
-
-Remember: You must perform fresh searches and scrapes for the current question, regardless of previous conversation history.`,
+Based on the search results above, decide whether to continue searching or if you have enough information to answer the question.`,
   });
 
   return result.object;

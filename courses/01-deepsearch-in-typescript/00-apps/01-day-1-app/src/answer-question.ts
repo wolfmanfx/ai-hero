@@ -49,7 +49,7 @@ User's Location:
       }),
       // markdownJoinerTransform(),
     ],
-    system: `You are a helpful AI assistant that provides comprehensive answers based on web search results and scraped content.
+    system: `You are a helpful AI assistant that provides comprehensive answers based on web search results and content summaries.
 
 Today's date is ${currentDate} (UTC).${locationInfo ? '\n' + locationInfo : ''}
 
@@ -68,17 +68,14 @@ CITATION EXAMPLES:
 ✗ BAD: "The Eiffel Tower is 330 meters tall." (no citation)
 ✗ BAD: "According to sources, Python was created in 1991." (vague, no link)
 
-Base your response on the full content from the scraped pages and search results provided. Format your response in a clear and helpful manner with comprehensive information.${finalWarning}`,
+Base your response on the content summaries and search results provided. Format your response in a clear and helpful manner with comprehensive information.${finalWarning}`,
     prompt: `Conversation history:
 ${context.getConversationHistory()}
 
 Current question: "${context.getUserQuestion()}"
 
 Search History:
-${context.getQueryHistory()}
-
-Scraped Content:
-${context.getScrapeHistory()}
+${context.getSearchHistory()}
 
 Please provide a comprehensive answer to the user's question based on the information above and the conversation context. Remember to cite every fact with inline links.`,
   });

@@ -288,11 +288,6 @@ const SearchIcon = () => (
   </svg>
 );
 
-const LinkIcon = () => (
-  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-  </svg>
-);
 
 export const ReasoningSteps = ({
   annotations,
@@ -310,6 +305,19 @@ export const ReasoningSteps = ({
       <ul className="space-y-1">
         {annotations.map((annotation, index) => {
           const isOpen = openStep === index;
+          
+          // Determine the title based on annotation type
+          let title = "";
+          if (annotation.type === "NEW_ACTION") {
+            if (annotation.action.type === "continue") {
+              title = "Continuing search...";
+            } else if (annotation.action.type === "answer") {
+              title = "Generating answer";
+            }
+          } else if (annotation.type === "QUERY_PLAN") {
+            title = "Planning searches";
+          }
+          
           return (
             <li key={index} className="relative">
               <button
@@ -332,39 +340,40 @@ export const ReasoningSteps = ({
                 >
                   {index + 1}
                 </span>
-                {annotation.action.title}
+                {title}
               </button>
               <div
                 className={`${isOpen ? "mt-1" : "hidden"}`}
               >
                 {isOpen && (
                   <div className="px-2 py-1">
-                    <div className="text-sm italic text-gray-400">
-                      <Markdown>
-                        {annotation.action.reasoning}
-                      </Markdown>
-                    </div>
-                    {annotation.action.type ===
-                      "search" && (
-                      <div className="mt-2 flex items-center gap-2 text-sm text-gray-400">
-                        <SearchIcon />
-                        <span>
-                          {annotation.action.query}
-                        </span>
+                    {annotation.type === "NEW_ACTION" && (
+                      <div className="text-sm italic text-gray-400">
+                        <Markdown>
+                          {annotation.action.reasoning}
+                        </Markdown>
                       </div>
                     )}
-                    {annotation.action.type ===
-                      "scrape" && (
-                      <div className="mt-2 flex items-center gap-2 text-sm text-gray-400">
-                        <LinkIcon />
-                        <span>
-                          {annotation.action.urls
-                            ?.map(
-                              (url) =>
-                                new URL(url).hostname,
-                            )
-                            ?.join(", ")}
-                        </span>
+                    {annotation.type === "QUERY_PLAN" && (
+                      <div className="space-y-3">
+                        <div className="text-sm text-gray-400">
+                          <div className="font-semibold mb-1">Research Plan:</div>
+                          <Markdown>{annotation.plan}</Markdown>
+                        </div>
+                        <div className="text-sm text-gray-400">
+                          <div className="font-semibold mb-1">Search Queries:</div>
+                          <ul className="space-y-2">
+                            {annotation.queries.map((q, qIndex) => (
+                              <li key={qIndex} className="flex items-start gap-2">
+                                <SearchIcon />
+                                <div>
+                                  <div className="font-medium">{q.query}</div>
+                                  <div className="text-xs text-gray-500 mt-1">{q.purpose}</div>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
                       </div>
                     )}
                   </div>
