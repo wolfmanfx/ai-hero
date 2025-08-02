@@ -1,12 +1,12 @@
 import { type StreamTextResult, streamText, type Message } from "ai";
 import { SystemContext } from "./system-context";
-import { getNextAction } from "./get-next-action";
+import { getNextAction, type Action } from "./get-next-action";
 import { queryRewriter } from "./query-rewriter";
 import { searchSerper } from "~/serper";
 import { bulkCrawlWebsites } from "~/crawler";
 import { env } from "~/env";
 import { answerQuestion } from "./answer-question";
-import type { OurMessageAnnotation } from "./types/message-annotation";
+import type { OurMessageAnnotation, SearchSource } from "./types/message-annotation";
 import { summarizeURL } from "./summarize-url";
 
 export async function searchWeb(query: string, abortSignal?: AbortSignal) {
@@ -78,6 +78,54 @@ export async function runAgentLoop(
     const searchPromises = queryPlan.queries.map(async ({ query }) => {
       const searchResults = await searchWeb(query);
       
+      return { query, searchResults };
+    });
+    
+    // Wait for all Google searches to complete
+    const allGoogleSearches = await Promise.all(searchPromises);
+    
+    // Collect all unique sources immediately after Google searches complete
+    const allSources: SearchSource[] = [];
+    const seenUrls = new Set<string>();
+    
+    for (const { searchResults } of allGoogleSearches) {
+      for (const result of searchResults) {
+        if (!seenUrls.has(result.link)) {
+          seenUrls.add(result.link);
+          
+          // Extract favicon URL from the domain
+          try {
+            const url = new URL(result.link);
+            const faviconUrl = `https://www.google.com/s2/favicons?domain=${url.hostname}&sz=64`;
+            
+            allSources.push({
+              title: result.title,
+              url: result.link,
+              snippet: result.snippet,
+              favicon: faviconUrl,
+            });
+          } catch {
+            // If URL parsing fails, still add the source without favicon
+            allSources.push({
+              title: result.title,
+              url: result.link,
+              snippet: result.snippet,
+            });
+          }
+        }
+      }
+    }
+    
+    // Send sources annotation immediately after Google searches complete
+    if (allSources.length > 0) {
+      opts.writeMessageAnnotation({
+        type: "SEARCH_SOURCES",
+        sources: allSources,
+      });
+    }
+    
+    // Step 3: Scrape and summarize
+    const summaryPromises = allGoogleSearches.map(async ({ query, searchResults }) => {
       // Extract URLs from search results
       const urls = searchResults.map(result => result.link);
       
@@ -101,6 +149,7 @@ export async function runAgentLoop(
               },
               query: query,
               langfuseTraceId: opts.langfuseTraceId,
+              context: ctx,
             });
             
             return {
@@ -113,24 +162,38 @@ export async function runAgentLoop(
           } catch (error: any) {
             console.error(`Failed to summarize ${searchResult.link}:`, error);
             
-            let errorMessage = "Failed to summarize content";
+            // Check if it's an overload error (multiple ways to detect this)
+            const isOverloadError = error.statusCode === 503 || 
+                                  error.data?.error?.message?.includes('overloaded') ||
+                                  error.message?.includes('overloaded') ||
+                                  error.toString().includes('overloaded');
             
-            // Check if it's a 503 overload error
-            if (error.statusCode === 503 && error.data?.error?.message?.includes('overloaded')) {
-              errorMessage = "Summarizer temporarily overloaded - using snippet only";
-              console.warn(`Model overloaded for ${searchResult.link}, falling back to snippet`);
-            } else if (error.statusCode) {
-              errorMessage = `Summarization failed (Error ${error.statusCode})`;
+            if (isOverloadError && scrapeResult?.content) {
+              console.warn(`Model overloaded for ${searchResult.link}, using full scraped content instead`);
+              
+              // Use the full scraped content instead of snippet when model is overloaded
+              return {
+                date: searchResult.date || new Date().toISOString(),
+                title: searchResult.title,
+                url: searchResult.link,
+                snippet: searchResult.snippet,
+                scrapedContent: `Summarizer temporarily overloaded - using full content:\n\n${scrapeResult.content}`,
+              };
+            } else {
+              let errorMessage = "Failed to summarize content";
+              if (error.statusCode) {
+                errorMessage = `Summarization failed (Error ${error.statusCode})`;
+              }
+              
+              // Fallback to snippet for non-overload errors
+              return {
+                date: searchResult.date || new Date().toISOString(),
+                title: searchResult.title,
+                url: searchResult.link,
+                snippet: searchResult.snippet,
+                scrapedContent: `${errorMessage}\n\nSnippet: ${searchResult.snippet}`,
+              };
             }
-            
-            // Return the search result with snippet as fallback
-            return {
-              date: searchResult.date || new Date().toISOString(),
-              title: searchResult.title,
-              url: searchResult.link,
-              snippet: searchResult.snippet,
-              scrapedContent: `${errorMessage}\n\nSnippet: ${searchResult.snippet}`,
-            };
           }
         } else {
           const scrapeError = !scrapeResult?.success ? "Failed to scrape" : "No content found";
@@ -149,24 +212,38 @@ export async function runAgentLoop(
       return { query, results: combinedResults };
     });
     
-    // Wait for all searches to complete
-    const allSearchResults = await Promise.all(searchPromises);
+    // Wait for all summaries to complete
+    const allSearchResults = await Promise.all(summaryPromises);
     
-    // Step 3: Save it to the context
+    // Step 4: Save it to the context
     allSearchResults.forEach(({ query, results }) => {
       ctx.reportSearch({ query, results });
     });
     
-    // Step 4: Decide whether to continue by calling getNextAction
+    // Step 5: Decide whether to continue by calling getNextAction
     const nextAction = await getNextAction(ctx, opts.langfuseTraceId);
+    
+    // Store the feedback in the context for the next iteration (only if provided)
+    if (nextAction.feedback) {
+      ctx.setLatestFeedback(nextAction.feedback);
+    }
     
     // Send action annotation
     opts.writeMessageAnnotation({
       type: "NEW_ACTION",
-      action: nextAction,
+      action: nextAction as Action,
     });
     
     if (nextAction.type === "answer") {
+      // Send token usage annotation before answering
+      const totalUsage = ctx.getTotalUsage();
+      if (totalUsage > 0) {
+        opts.writeMessageAnnotation({
+          type: "TOKEN_USAGE",
+          totalTokens: totalUsage,
+        });
+      }
+      
       return answerQuestion(ctx, { 
         isFinal: false,
         onFinish: opts.onFinish,
@@ -180,6 +257,16 @@ export async function runAgentLoop(
 
   // If we've taken 10 actions and still don't have an answer,
   // we ask the LLM to give its best attempt at an answer
+  
+  // Send token usage annotation before final answer
+  const totalUsage = ctx.getTotalUsage();
+  if (totalUsage > 0) {
+    opts.writeMessageAnnotation({
+      type: "TOKEN_USAGE",
+      totalTokens: totalUsage,
+    });
+  }
+  
   return answerQuestion(ctx, { 
     isFinal: true,
     onFinish: opts.onFinish,

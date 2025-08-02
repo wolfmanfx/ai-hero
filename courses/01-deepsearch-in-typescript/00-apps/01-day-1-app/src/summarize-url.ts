@@ -3,6 +3,7 @@ import { summarizerModel } from "~/model";
 import { cacheWithRedis } from "~/server/redis/redis";
 import type { Message } from "ai";
 import { retryWithBackoff } from "~/utils/retry";
+import type { SystemContext } from "./system-context";
 
 interface SummarizeURLParams {
   conversationHistory: string;
@@ -15,6 +16,7 @@ interface SummarizeURLParams {
   };
   query: string;
   langfuseTraceId?: string;
+  context?: SystemContext;
 }
 
 const summarizeURLUncached = async ({
@@ -23,6 +25,7 @@ const summarizeURLUncached = async ({
   metadata,
   query,
   langfuseTraceId,
+  context,
 }: SummarizeURLParams): Promise<string> => {
   const currentDate = new Date().toLocaleDateString('en-US', { 
     weekday: 'long', 
@@ -85,6 +88,11 @@ Please synthesize the content above, focusing on information relevant to the res
       }
     }
   );
+
+  // Report usage to context if context is provided
+  if (context) {
+    context.reportUsage("summarize-url", result.usage);
+  }
 
   return result.text;
 };

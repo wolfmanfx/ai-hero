@@ -4,7 +4,7 @@ import { model } from "~/model";
 export const generateChatTitle = async (
   messages: Message[],
 ) => {
-  const { text } = await generateText({
+  const result = await generateText({
     model,
     system: `You are a chat title generator.
       You will be given a chat history, and you will need to generate a title for the chat.
@@ -18,5 +18,5 @@ export const generateChatTitle = async (
     `,
   });
 
-  return text;
+  return result.text;
 };

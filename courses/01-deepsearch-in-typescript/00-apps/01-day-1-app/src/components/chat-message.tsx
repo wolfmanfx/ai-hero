@@ -1,7 +1,7 @@
 import ReactMarkdown, { type Components } from "react-markdown";
 import type { Message } from "ai";
 import { useState } from "react";
-import type { OurMessageAnnotation } from "~/types/message-annotation";
+import type { OurMessageAnnotation, SearchSource } from "~/types/message-annotation";
 
 export type MessagePart = NonNullable<Message["parts"]>[number];
 
@@ -288,6 +288,52 @@ const SearchIcon = () => (
   </svg>
 );
 
+const LinkIcon = () => (
+  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+  </svg>
+);
+
+const SourceCard = ({ source }: { source: SearchSource }) => {
+  return (
+    <a
+      href={source.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="block p-4 rounded-lg border border-gray-700 bg-gray-800/50 hover:bg-gray-800 hover:border-gray-600 transition-colors"
+    >
+      <div className="flex items-start gap-3">
+        {source.favicon ? (
+          <img 
+            src={source.favicon} 
+            alt="" 
+            className="w-6 h-6 rounded flex-shrink-0"
+            onError={(e) => {
+              // Hide broken favicon images
+              e.currentTarget.style.display = 'none';
+            }}
+          />
+        ) : (
+          <div className="w-6 h-6 rounded bg-gray-700 flex items-center justify-center flex-shrink-0">
+            <LinkIcon />
+          </div>
+        )}
+        <div className="flex-1 min-w-0">
+          <h3 className="text-sm font-medium text-gray-200 mb-1 line-clamp-2">
+            {source.title}
+          </h3>
+          <p className="text-xs text-gray-400 line-clamp-2">
+            {source.snippet}
+          </p>
+          <p className="text-xs text-green-600 mt-1 truncate">
+            {source.url}
+          </p>
+        </div>
+      </div>
+    </a>
+  );
+};
+
 
 export const ReasoningSteps = ({
   annotations,
@@ -300,14 +346,20 @@ export const ReasoningSteps = ({
 
   if (!annotations || annotations.length === 0) return null;
 
+  // Filter out TOKEN_USAGE annotations as they're displayed separately
+  const reasoningAnnotations = annotations.filter(a => a.type !== "TOKEN_USAGE");
+  
+  if (reasoningAnnotations.length === 0) return null;
+
   return (
     <div className="mb-4 w-full">
       <ul className="space-y-1">
-        {annotations.map((annotation, index) => {
+        {reasoningAnnotations.map((annotation, index) => {
           const isOpen = openStep === index;
           
           // Determine the title based on annotation type
           let title = "";
+          let icon = null;
           if (annotation.type === "NEW_ACTION") {
             if (annotation.action.type === "continue") {
               title = "Continuing search...";
@@ -316,6 +368,9 @@ export const ReasoningSteps = ({
             }
           } else if (annotation.type === "QUERY_PLAN") {
             title = "Planning searches";
+          } else if (annotation.type === "SEARCH_SOURCES") {
+            title = `Found ${annotation.sources.length} sources`;
+            icon = <SearchIcon />;
           }
           
           return (
@@ -338,7 +393,7 @@ export const ReasoningSteps = ({
                       : "bg-gray-800 text-gray-300"
                   }`}
                 >
-                  {index + 1}
+                  {icon || (index + 1)}
                 </span>
                 {title}
               </button>
@@ -348,10 +403,21 @@ export const ReasoningSteps = ({
                 {isOpen && (
                   <div className="px-2 py-1">
                     {annotation.type === "NEW_ACTION" && (
-                      <div className="text-sm italic text-gray-400">
-                        <Markdown>
-                          {annotation.action.reasoning}
-                        </Markdown>
+                      <div className="space-y-3">
+                        <div className="text-sm italic text-gray-400">
+                          <div className="font-semibold mb-1">Reasoning:</div>
+                          <Markdown>
+                            {annotation.action.reasoning}
+                          </Markdown>
+                        </div>
+                        {annotation.action.feedback && (
+                          <div className="text-sm text-gray-300 bg-gray-800 rounded p-3">
+                            <div className="font-semibold mb-1 text-yellow-400">Evaluator Feedback:</div>
+                            <Markdown>
+                              {annotation.action.feedback}
+                            </Markdown>
+                          </div>
+                        )}
                       </div>
                     )}
                     {annotation.type === "QUERY_PLAN" && (
@@ -373,6 +439,15 @@ export const ReasoningSteps = ({
                               </li>
                             ))}
                           </ul>
+                        </div>
+                      </div>
+                    )}
+                    {annotation.type === "SEARCH_SOURCES" && (
+                      <div className="mt-2">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {annotation.sources.map((source, sourceIndex) => (
+                            <SourceCard key={sourceIndex} source={source} />
+                          ))}
                         </div>
                       </div>
                     )}
@@ -408,6 +483,18 @@ export const ChatMessage = ({ parts, role, userName, annotations }: ChatMessageP
         <div className="prose prose-invert max-w-none">
           {parts?.map((part, index) => renderMessagePart(part, index))}
         </div>
+        
+        {/* Display token usage if available */}
+        {isAI && annotations && (() => {
+          const tokenUsageAnnotation = annotations.find(a => a.type === "TOKEN_USAGE");
+          return tokenUsageAnnotation && 
+                 tokenUsageAnnotation.type === "TOKEN_USAGE" && 
+                 tokenUsageAnnotation.totalTokens > 0 ? (
+            <div className="mt-4 text-xs text-gray-500">
+              Tokens: {tokenUsageAnnotation.totalTokens.toLocaleString()}
+            </div>
+          ) : null;
+        })()}
       </div>
     </div>
   );

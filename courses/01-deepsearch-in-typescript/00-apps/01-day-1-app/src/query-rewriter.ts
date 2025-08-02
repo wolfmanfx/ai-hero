@@ -93,8 +93,14 @@ ${context.getConversationHistory()}
 === PREVIOUS SEARCH RESULTS (if any) ===
 ${context.getSearchHistory() || 'No searches performed yet'}
 
-Create a strategic research plan and generate search queries to gather comprehensive information to answer this question.`,
+=== EVALUATOR FEEDBACK (if any) ===
+${context.getLatestFeedback() ? `The evaluator provided this feedback on what information is missing or needs improvement:\n\n${context.getLatestFeedback()}` : 'No previous feedback available.'}
+
+Create a strategic research plan and generate search queries to gather comprehensive information to answer this question. If evaluator feedback is provided, prioritize addressing those specific gaps and recommendations.`,
   });
+
+  // Report usage to context
+  context.reportUsage("query-rewriter", result.usage);
 
   return result.object;
 };

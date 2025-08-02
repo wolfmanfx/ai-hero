@@ -6,11 +6,13 @@ import type { SystemContext } from "./system-context";
 export interface ContinueAction {
   type: "continue";
   reasoning: string;
+  feedback: string;
 }
 
 export interface AnswerAction {
   type: "answer";
   reasoning: string;
+  feedback?: string;
 }
 
 export type Action =
@@ -21,6 +23,10 @@ export const actionSchema = z.object({
   reasoning: z
     .string()
     .describe("The reason you chose this action."),
+  feedback: z
+    .string()
+    .optional()
+    .describe("Detailed feedback about what information is missing, what has been found, or what gaps need to be filled. This should be actionable guidance for the next search iteration. Only required when choosing 'continue'."),
   type: z
     .enum(["continue", "answer"])
     .describe(
@@ -62,29 +68,40 @@ User's Location:
         langfuseTraceId: langfuseTraceId,
       },
     } : undefined,
-    system: `You are a decision-making component that determines whether to continue searching for information or to generate an answer.
+    system: `You are a research query optimizer. Your task is to analyze search results against the original research goal and either decide to answer the question or to search for more information.
 
 Today's date is ${currentDate} (UTC).${locationInfo ? '\n' + locationInfo : ''}
 
-You must decide what action to take next:
+PROCESS:
+1. Identify ALL information explicitly requested in the original research goal
+2. Analyze what specific information has been successfully retrieved in the search results
+3. Identify ALL information gaps between what was requested and what was found
+4. For entity-specific gaps: Create targeted queries for each missing attribute of identified entities
+5. For general knowledge gaps: Create focused queries to find the missing conceptual information
 
-1. 'continue': More information is needed to answer the user's question adequately.
-2. 'answer': Sufficient information has been gathered from previous searches to provide a comprehensive answer.
-
-CRITICAL DECISION RULES:
+DECISION CRITERIA:
 - Choose 'continue' if:
   - No searches have been performed yet for the current question
-  - The gathered information is incomplete or contradictory
-  - Key aspects of the user's question remain unanswered
-  - The search results suggest there might be more relevant information available
-  
-- Choose 'answer' if:
-  - You have gathered comprehensive information from searches
-  - All key aspects of the user's question can be addressed
-  - The search results provide consistent and sufficient information
-  - Further searching is unlikely to add significant value
+  - Critical information is missing that would make the answer incomplete or unreliable
+  - The search results contain contradictory information that needs clarification
+  - Specific entities, dates, numbers, or facts mentioned in the question are unverified
+  - The search results suggest there might be more authoritative or recent information available
 
-Base your decision ONLY on the current question and the search results gathered for it.`,
+- Choose 'answer' if:
+  - All key components of the user's question have been addressed with reliable information
+  - The search results provide consistent, authoritative, and sufficiently detailed information
+  - Any remaining gaps are minor and don't affect the core answer
+  - Further searching is unlikely to add significant value to the response
+
+FEEDBACK REQUIREMENTS:
+- When choosing 'continue': You MUST provide specific, actionable feedback about what information is missing, what contradictions need resolving, or what aspects need deeper investigation. Explain WHY the current information is insufficient and what gaps need to be filled.
+- When choosing 'answer': Feedback is optional since you already have sufficient information to answer the question
+- Be specific about entities, concepts, or data points that need attention
+- Guide the next search iteration with clear direction on what to look for and why
+
+Your feedback should help the query rewriter understand exactly what information is missing and how to search for it more effectively.
+
+Base your decision and feedback ONLY on the current question and the search results gathered for it.`,
     prompt: `=== PREVIOUS CONVERSATION (for context only) ===
 ${context.getConversationHistory()}
 
@@ -96,6 +113,9 @@ ${context.getSearchHistory() || 'No searches performed yet for this question'}
 
 Based on the search results above, decide whether to continue searching or if you have enough information to answer the question.`,
   });
+
+  // Report usage to context
+  context.reportUsage("get-next-action", result.usage);
 
   return result.object;
 };

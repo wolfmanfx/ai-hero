@@ -1,4 +1,4 @@
-import type { Message } from "ai";
+import type { Message, LanguageModelUsage } from "ai";
 
 type SearchResult = {
   date: string;
@@ -11,6 +11,11 @@ type SearchResult = {
 type SearchHistoryEntry = {
   query: string;
   results: SearchResult[];
+};
+
+type UsageEntry = {
+  source: string;
+  usage: LanguageModelUsage;
 };
 
 
@@ -31,6 +36,11 @@ export class SystemContext {
   private searchHistory: SearchHistoryEntry[] = [];
 
   /**
+   * The most recent feedback from the evaluator
+   */
+  private latestFeedback?: string;
+
+  /**
    * User's location information
    */
   private requestHints?: {
@@ -39,6 +49,11 @@ export class SystemContext {
     city?: string;
     country?: string;
   };
+
+  /**
+   * Usage tracking for LLM calls
+   */
+  private usageLog: UsageEntry[] = [];
 
   constructor(messages: Message[], requestHints?: {
     latitude?: string;
@@ -99,5 +114,32 @@ export class SystemContext {
 
   getRequestHints() {
     return this.requestHints;
+  }
+
+  setLatestFeedback(feedback: string) {
+    this.latestFeedback = feedback;
+  }
+
+  getLatestFeedback(): string | undefined {
+    return this.latestFeedback;
+  }
+
+  reportUsage(source: string, usage: LanguageModelUsage) {
+    // Only report if usage is valid and has tokens
+    if (usage && usage.totalTokens && usage.totalTokens > 0) {
+      this.usageLog.push({ source, usage });
+    }
+  }
+
+  getTotalUsage(): number {
+    return this.usageLog.reduce((total, entry) => {
+      // Ensure we have valid token counts
+      const tokens = entry.usage?.totalTokens || 0;
+      return total + (isNaN(tokens) ? 0 : tokens);
+    }, 0);
+  }
+
+  getUsageLog(): UsageEntry[] {
+    return this.usageLog;
   }
 }

@@ -32,7 +32,7 @@ User's Location:
     ? "\n\nIMPORTANT: We may not have all the information needed to answer the question perfectly, but please provide your best effort answer based on the available information."
     : "";
 
-  return streamText({
+  const result = streamText({
     model,
     onFinish: options.onFinish,
     experimental_telemetry: options.langfuseTraceId ? {
@@ -79,4 +79,11 @@ ${context.getSearchHistory()}
 
 Please provide a comprehensive answer to the user's question based on the information above and the conversation context. Remember to cite every fact with inline links.`,
   });
+
+  // Report usage to context when stream completes
+  void result.usage.then((usage) => {
+    context.reportUsage("answer-question", usage);
+  });
+
+  return result;
 }
